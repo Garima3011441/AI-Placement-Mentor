@@ -1,924 +1,699 @@
 import { useEffect, useState } from "react";
 import "./App.css";
 
+const API_URL = "https://ai-placement-mentor-fy6x.onrender.com";
+
+const subjects = [
+  { name: "DSA", score: 72 },
+  { name: "DBMS", score: 85 },
+  { name: "Operating Systems", score: 43 },
+  { name: "Computer Networks", score: 38 },
+  { name: "OOP", score: 76 },
+  { name: "Aptitude", score: 82 },
+];
+
+const assessmentSubjects = [
+  "DSA",
+  "DBMS",
+  "OS",
+  "CN",
+  "OOP",
+  "Aptitude",
+];
+
 function App() {
+  const [activePage, setActivePage] = useState("Dashboard");
+
+  // Assessment states
+  const [selectedSubject, setSelectedSubject] = useState("DSA");
   const [questions, setQuestions] = useState([]);
-  const [selectedQuestion, setSelectedQuestion] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [answers, setAnswers] = useState({});
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
 
-  // Filters
-  const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("All");
-  const [difficulty, setDifficulty] = useState("All");
-
-  // AI Mentor
+  // AI Mentor states
   const [mentorQuestion, setMentorQuestion] = useState("");
   const [mentorAnswer, setMentorAnswer] = useState("");
   const [mentorLoading, setMentorLoading] = useState(false);
-  const [recommendedQuestions, setRecommendedQuestions] = useState([]);
 
-  // Completed questions
-  const [completedQuestions, setCompletedQuestions] = useState(() => {
-    const saved = localStorage.getItem("completedQuestions");
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  // Quiz
-  const [quizMode, setQuizMode] = useState(false);
-  const [quizQuestions, setQuizQuestions] = useState([]);
-  const [currentQuizIndex, setCurrentQuizIndex] = useState(0);
-  const [showQuizAnswer, setShowQuizAnswer] = useState(false);
-
-  // Quiz results
-  const [quizFinished, setQuizFinished] = useState(false);
-  const [quizSessionCompleted, setQuizSessionCompleted] = useState([]);
-
-  // Fetch questions from backend
   useEffect(() => {
-    fetch("http://127.0.0.1:8000/questions")
-      .then((response) => response.json())
-      .then((data) => {
-        setQuestions(data.questions || []);
-        setLoading(false);
-      })
-      .catch((error) => {
-        console.error("Error fetching questions:", error);
-        setLoading(false);
-      });
-  }, []);
+    if (activePage === "Assessment") {
+      loadQuestions(selectedSubject);
+    }
+  }, [activePage]);
 
-  // Save completed questions
-  useEffect(() => {
-    localStorage.setItem(
-      "completedQuestions",
-      JSON.stringify(completedQuestions)
-    );
-  }, [completedQuestions]);
-
-  // Categories
-  const categories = [
-    "All",
-    ...new Set(
-      questions
-        .map((question) => question.category)
-        .filter(Boolean)
-    ),
-  ];
-
-  // Filter questions
-  const filteredQuestions = questions.filter((question) => {
-    const questionText = (question.question || "").toLowerCase();
-    const answerText = (question.answer || "").toLowerCase();
-
-    const matchesSearch =
-      questionText.includes(search.toLowerCase()) ||
-      answerText.includes(search.toLowerCase());
-
-    const matchesCategory =
-      category === "All" ||
-      question.category === category;
-
-    const matchesDifficulty =
-      difficulty === "All" ||
-      question.difficulty === difficulty;
-
-    return (
-      matchesSearch &&
-      matchesCategory &&
-      matchesDifficulty
-    );
-  });
-
-  // Mark question completed
-  const toggleCompleted = (id) => {
-    setCompletedQuestions((previous) => {
-      if (previous.includes(id)) {
-        return previous.filter(
-          (questionId) => questionId !== id
-        );
-      }
-
-      return [...previous, id];
-    });
-  };
-
-  // Mark completed in quiz
-  const toggleQuizCompleted = (id) => {
-    toggleCompleted(id);
-
-    setQuizSessionCompleted((previous) => {
-      if (previous.includes(id)) {
-        return previous.filter(
-          (questionId) => questionId !== id
-        );
-      }
-
-      return [...previous, id];
-    });
-  };
-
-  // Random question
-  const showRandomQuestion = () => {
-    if (filteredQuestions.length === 0) return;
-
-    const randomIndex = Math.floor(
-      Math.random() * filteredQuestions.length
-    );
-
-    const randomQuestion =
-      filteredQuestions[randomIndex];
-
-    setSelectedQuestion(randomQuestion.id);
-
-    setTimeout(() => {
-      document.getElementById(
-        `question-${randomQuestion.id}`
-      )?.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-      });
-    }, 100);
-  };
-
-  // Ask AI Mentor
-  const askMentor = async () => {
-    if (!mentorQuestion.trim()) return;
-
-    setMentorLoading(true);
-    setMentorAnswer("");
-    setRecommendedQuestions([]);
+  async function loadQuestions(subject) {
+    setLoading(true);
+    setResult(null);
+    setAnswers({});
 
     try {
       const response = await fetch(
-        `http://127.0.0.1:8000/mentor?question=${encodeURIComponent(
-          mentorQuestion
-        )}`
+        `${API_URL}/questions/${subject}`
       );
+
+      if (!response.ok) {
+        throw new Error("Failed to load questions");
+      }
 
       const data = await response.json();
 
-      setMentorAnswer(data.answer || "");
-
-      setRecommendedQuestions(
-        data.recommended_questions || []
-      );
+      setQuestions(data.questions || []);
     } catch (error) {
-      console.error("Mentor error:", error);
+      console.error(error);
+      setQuestions([]);
+    }
+
+    setLoading(false);
+  }
+
+  function changeSubject(subject) {
+    setSelectedSubject(subject);
+    loadQuestions(subject);
+  }
+
+  function selectAnswer(questionId, optionIndex) {
+    setAnswers({
+      ...answers,
+      [questionId]: optionIndex,
+    });
+  }
+
+  async function submitAssessment() {
+    if (questions.length === 0) {
+      return;
+    }
+
+    if (Object.keys(answers).length < questions.length) {
+      alert("Please answer all questions before submitting.");
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `${API_URL}/assessment/submit`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            subject: selectedSubject,
+            answers: answers,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Assessment submission failed");
+      }
+
+      const data = await response.json();
+
+      setResult(data);
+    } catch (error) {
+      console.error(error);
+      alert("Could not connect to backend.");
+    }
+  }
+
+  // =========================
+  // AI MENTOR
+  // =========================
+
+  async function askMentor() {
+    if (!mentorQuestion.trim()) {
+      return;
+    }
+
+    setMentorLoading(true);
+    setMentorAnswer("");
+
+    try {
+      const response = await fetch(
+        `${API_URL}/mentor`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            question: mentorQuestion,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Backend request failed");
+      }
+
+      const data = await response.json();
+
+      setMentorAnswer(data.answer);
+    } catch (error) {
+      console.error(error);
 
       setMentorAnswer(
-        "Unable to connect to the AI Mentor. Please make sure the backend is running."
+        "Unable to connect to the AI Mentor backend. Please try again."
       );
     }
 
     setMentorLoading(false);
-  };
-
-  // Start quiz
-  const startQuiz = () => {
-    if (filteredQuestions.length === 0) return;
-
-    const shuffled = [...filteredQuestions]
-      .sort(() => Math.random() - 0.5)
-      .slice(
-        0,
-        Math.min(10, filteredQuestions.length)
-      );
-
-    setQuizQuestions(shuffled);
-    setCurrentQuizIndex(0);
-    setShowQuizAnswer(false);
-    setQuizSessionCompleted([]);
-    setQuizFinished(false);
-    setQuizMode(true);
-  };
-
-  // Next quiz question
-  const nextQuizQuestion = () => {
-    if (
-      currentQuizIndex <
-      quizQuestions.length - 1
-    ) {
-      setCurrentQuizIndex(
-        (previous) => previous + 1
-      );
-
-      setShowQuizAnswer(false);
-    } else {
-      setQuizMode(false);
-      setQuizFinished(true);
-      setShowQuizAnswer(false);
-    }
-  };
-
-  // Exit quiz
-  const exitQuiz = () => {
-    setQuizMode(false);
-    setQuizFinished(false);
-    setQuizQuestions([]);
-    setCurrentQuizIndex(0);
-    setShowQuizAnswer(false);
-    setQuizSessionCompleted([]);
-  };
-
-  // Overall progress
-  const progressPercentage =
-    questions.length > 0
-      ? (
-          (completedQuestions.length /
-            questions.length) *
-          100
-        ).toFixed(1)
-      : 0;
-
-  // Category progress
-  const categoryProgress = categories
-    .filter((item) => item !== "All")
-    .map((categoryName) => {
-      const categoryQuestions =
-        questions.filter(
-          (question) =>
-            question.category === categoryName
-        );
-
-      const completed =
-        categoryQuestions.filter(
-          (question) =>
-            completedQuestions.includes(
-              question.id
-            )
-        ).length;
-
-      const percentage =
-        categoryQuestions.length > 0
-          ? (
-              (completed /
-                categoryQuestions.length) *
-              100
-            ).toFixed(0)
-          : 0;
-
-      return {
-        category: categoryName,
-        total: categoryQuestions.length,
-        completed,
-        percentage,
-      };
-    });
-
-  // Quiz percentage
-  const quizPercentage =
-    quizQuestions.length > 0
-      ? (
-          (quizSessionCompleted.length /
-            quizQuestions.length) *
-          100
-        ).toFixed(0)
-      : 0;
-
-  // ================= QUIZ RESULT =================
-
-  if (quizFinished) {
-    return (
-      <div className="app">
-        <div className="quiz-container">
-          <div className="quiz-result-card">
-
-            <h1>🏆 Quiz Completed!</h1>
-
-            <p className="quiz-result-text">
-              Great job! Here is your quiz
-              session summary.
-            </p>
-
-            <div className="result-stat">
-              <span>
-                Questions in Quiz
-              </span>
-
-              <strong>
-                {quizQuestions.length}
-              </strong>
-            </div>
-
-            <div className="result-stat">
-              <span>
-                Questions Completed
-              </span>
-
-              <strong>
-                {quizSessionCompleted.length}
-              </strong>
-            </div>
-
-            <div className="result-stat">
-              <span>
-                Session Progress
-              </span>
-
-              <strong>
-                {quizPercentage}%
-              </strong>
-            </div>
-
-            <div className="quiz-progress-bar">
-              <div
-                className="quiz-progress-fill"
-                style={{
-                  width: `${quizPercentage}%`,
-                }}
-              />
-            </div>
-
-            <div className="quiz-result-actions">
-              <button onClick={startQuiz}>
-                🎯 Start Another Quiz
-              </button>
-
-              <button onClick={exitQuiz}>
-                ← Back to Dashboard
-              </button>
-            </div>
-
-          </div>
-        </div>
-      </div>
-    );
   }
 
-  // ================= QUIZ MODE =================
+  function handleMentorKeyDown(event) {
+    if (event.key === "Enter") {
+      askMentor();
+    }
+  }
 
-  if (
-    quizMode &&
-    quizQuestions.length > 0
-  ) {
-    const currentQuestion =
-      quizQuestions[currentQuizIndex];
-
+  function renderDashboard() {
     return (
-      <div className="app">
-        <div className="quiz-container">
+      <>
+        <section className="welcome-card">
+          <div>
+            <h2>Welcome back! 👋</h2>
 
-          <div className="quiz-header">
-            <div>
-              <h1>🎯 Quiz Mode</h1>
+            <p>
+              Track your placement preparation and improve your weak areas.
+            </p>
 
-              <p>
-                Question{" "}
-                {currentQuizIndex + 1} of{" "}
-                {quizQuestions.length}
-              </p>
-            </div>
-
-            <button onClick={exitQuiz}>
-              Exit Quiz
+            <button
+              className="primary-button"
+              onClick={() => setActivePage("Assessment")}
+            >
+              Take Assessment
             </button>
           </div>
 
-          <div className="quiz-progress-bar">
-            <div
-              className="quiz-progress-fill"
-              style={{
-                width: `${
-                  ((currentQuizIndex + 1) /
-                    quizQuestions.length) *
-                  100
-                }%`,
-              }}
-            />
+          <div className="overall-score">
+            <span>Overall Score</span>
+            <strong>66%</strong>
           </div>
+        </section>
 
-          <div className="quiz-card">
+        <h2 className="section-title">Your Performance</h2>
 
-            <p className="question-info">
-              <strong>
-                {currentQuestion.category}
-              </strong>
+        <section className="subject-grid">
+          {subjects.map((subject) => (
+            <div className="subject-card" key={subject.name}>
+              <div className="subject-header">
+                <span>{subject.name}</span>
 
-              {" | "}
-
-              {currentQuestion.difficulty}
-            </p>
-
-            <h2>
-              {currentQuestion.question}
-            </h2>
-
-            {!showQuizAnswer && (
-              <button
-                onClick={() =>
-                  setShowQuizAnswer(true)
-                }
-              >
-                Show Answer
-              </button>
-            )}
-
-            {showQuizAnswer && (
-              <div className="question-answer">
-                <strong>
-                  Answer:
-                </strong>
-
-                <p>
-                  {currentQuestion.answer}
-                </p>
+                <strong>{subject.score}%</strong>
               </div>
-            )}
 
-            <div className="quiz-actions">
+              <div className="progress-background">
+                <div
+                  className="progress"
+                  style={{
+                    width: `${subject.score}%`,
+                  }}
+                ></div>
+              </div>
 
-              <button
-                className={
-                  quizSessionCompleted.includes(
-                    currentQuestion.id
-                  )
-                    ? "completed"
-                    : ""
-                }
-                onClick={() =>
-                  toggleQuizCompleted(
-                    currentQuestion.id
-                  )
-                }
-              >
-                {quizSessionCompleted.includes(
-                  currentQuestion.id
-                )
-                  ? "✓ Completed"
-                  : "Mark as Completed"}
-              </button>
+              <p>
+                {subject.score < 50
+                  ? "Needs improvement"
+                  : subject.score < 75
+                  ? "Keep practicing"
+                  : "Good performance"}
+              </p>
+            </div>
+          ))}
+        </section>
 
-              <button
-                onClick={nextQuizQuestion}
-              >
-                {currentQuizIndex ===
-                quizQuestions.length - 1
-                  ? "Finish Quiz 🏆"
-                  : "Next Question →"}
-              </button>
+        <section className="bottom-grid">
+          <div className="panel">
+            <h2>Recommended Focus</h2>
 
+            <div className="recommendation">
+              <span>Computer Networks</span>
+              <strong>High Priority</strong>
             </div>
 
+            <div className="recommendation">
+              <span>Operating Systems</span>
+              <strong>High Priority</strong>
+            </div>
+
+            <div className="recommendation">
+              <span>DSA</span>
+              <strong>Medium Priority</strong>
+            </div>
           </div>
-        </div>
-      </div>
+
+          <div className="panel">
+            <h2>Quick Actions</h2>
+
+            <button
+              className="action-button"
+              onClick={() => setActivePage("Assessment")}
+            >
+              📝 Start Assessment
+            </button>
+
+            <button
+              className="action-button"
+              onClick={() => setActivePage("AI Mentor")}
+            >
+              🤖 Ask AI Mentor
+            </button>
+
+            <button
+              className="action-button"
+              onClick={() => setActivePage("Resume")}
+            >
+              📄 Analyze Resume
+            </button>
+          </div>
+        </section>
+      </>
     );
   }
 
-  // ================= MAIN DASHBOARD =================
+  function renderAssessment() {
+    return (
+      <section className="assessment-page">
+        <div className="panel">
+          <h2>Take Assessment</h2>
 
-  return (
-    <div className="app">
-
-      {/* HEADER */}
-
-      <div className="header">
-        <h1>
-          🤖 AI Placement Mentor
-        </h1>
-
-        <p>
-          Practice interview questions,
-          track your progress, and prepare
-          for placements with your AI mentor.
-        </p>
-      </div>
-
-
-      {/* QUIZ */}
-
-      <div className="quiz-start-section">
-
-        <div>
-          <h2>
-            🎯 Practice Quiz
-          </h2>
-
-          <p>
-            Test yourself with 10 random
-            interview questions.
+          <p className="description">
+            Select a subject and answer all questions.
           </p>
+
+          <div className="subject-selector">
+            {assessmentSubjects.map((subject) => (
+              <button
+                key={subject}
+                className={
+                  selectedSubject === subject
+                    ? "subject-button selected"
+                    : "subject-button"
+                }
+                onClick={() => changeSubject(subject)}
+              >
+                {subject}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <button onClick={startQuiz}>
-          Start Quiz
-        </button>
-
-      </div>
-
-
-      {/* AI MENTOR */}
-
-      <div className="card">
-
-        <h2>
-          🤖 Ask Your Placement Mentor
-        </h2>
-
-        <p>
-          Ask questions about DSA, Java,
-          React, SQL, DBMS, Operating
-          Systems, OOP, projects, or
-          interview preparation.
-        </p>
-
-        <textarea
-          className="mentor-input"
-          value={mentorQuestion}
-          onChange={(event) =>
-            setMentorQuestion(
-              event.target.value
-            )
-          }
-          placeholder="Example: Help me prepare for React interviews"
-        />
-
-        <br />
-
-        <button
-          onClick={askMentor}
-          disabled={mentorLoading}
-        >
-          {mentorLoading
-            ? "Thinking..."
-            : "Ask Mentor"}
-        </button>
-
-
-        {/* MENTOR ANSWER */}
-
-        {mentorAnswer && (
-          <div className="answer-box">
-
-            <h3>
-              🤖 Mentor Answer
-            </h3>
-
-            <p>
-              {mentorAnswer}
-            </p>
-
-
-            {/* RECOMMENDED QUESTIONS */}
-
-            {recommendedQuestions.length >
-              0 && (
-              <div className="recommended-section">
-
-                <h3>
-                  📚 Recommended Questions
-                </h3>
-
-                <p>
-                  Practice these questions
-                  based on your topic:
-                </p>
-
-                {recommendedQuestions.map(
-                  (item) => (
-                    <div
-                      className="recommended-question"
-                      key={item.id}
-                    >
-
-                      <h4>
-                        {item.id}.{" "}
-                        {item.question}
-                      </h4>
-
-                      <p>
-                        <strong>
-                          {item.category}
-                        </strong>
-
-                        {" | "}
-
-                        {item.difficulty}
-                      </p>
-
-                      <button
-                        onClick={() => {
-                          setSelectedQuestion(
-                            item.id
-                          );
-
-                          document
-                            .getElementById(
-                              `question-${item.id}`
-                            )
-                            ?.scrollIntoView({
-                              behavior:
-                                "smooth",
-                              block:
-                                "center",
-                            });
-                        }}
-                      >
-                        Practice Question
-                      </button>
-
-                    </div>
-                  )
-                )}
-
-              </div>
-            )}
-
+        {loading && (
+          <div className="panel">
+            <h3>Loading questions...</h3>
           </div>
         )}
 
-      </div>
-
-
-      {/* OVERALL PROGRESS */}
-
-      <div className="card">
-
-        <h2>
-          📊 Overall Progress
-        </h2>
-
-        <p>
-          Questions Completed:{" "}
-
-          <strong>
-            {completedQuestions.length}
-            {" / "}
-            {questions.length}
-          </strong>
-        </p>
-
-        <p>
-          Progress:{" "}
-
-          <strong>
-            {progressPercentage}%
-          </strong>
-        </p>
-
-        <div className="progress-bar">
-
-          <div
-            className="progress-fill"
-            style={{
-              width:
-                `${progressPercentage}%`,
-            }}
-          />
-
-        </div>
-
-      </div>
-
-
-      {/* CATEGORY PROGRESS */}
-
-      <div className="card">
-
-        <h2>
-          📚 Category Progress
-        </h2>
-
-        <div className="category-dashboard">
-
-          {categoryProgress.map(
-            (item) => (
+        {!loading && questions.length > 0 && (
+          <div className="questions-container">
+            {questions.map((question, index) => (
               <div
-                className="category-card"
-                key={item.category}
+                className="question-card"
+                key={question.id}
               >
-
                 <h3>
-                  {item.category}
+                  {index + 1}. {question.question}
                 </h3>
 
-                <p>
-                  <strong>
-                    {item.completed}
-                    {" / "}
-                    {item.total}
-                  </strong>
+                <div className="options">
+                  {question.options.map(
+                    (option, optionIndex) => (
+                      <label
+                        className="option"
+                        key={optionIndex}
+                      >
+                        <input
+                          type="radio"
+                          name={`question-${question.id}`}
+                          checked={
+                            answers[question.id] ===
+                            optionIndex
+                          }
+                          onChange={() =>
+                            selectAnswer(
+                              question.id,
+                              optionIndex
+                            )
+                          }
+                        />
 
-                  {" "}Completed
-                </p>
-
-                <div className="category-progress-bar">
-
-                  <div
-                    className="category-progress-fill"
-                    style={{
-                      width:
-                        `${item.percentage}%`,
-                    }}
-                  />
-
+                        <span>{option}</span>
+                      </label>
+                    )
+                  )}
                 </div>
-
-                <p className="percentage-text">
-                  {item.percentage}%
-                </p>
-
               </div>
-            )
-          )}
+            ))}
 
+            <button
+              className="submit-button"
+              onClick={submitAssessment}
+            >
+              Submit Assessment
+            </button>
+          </div>
+        )}
+
+        {!loading && questions.length === 0 && (
+          <div className="panel">
+            <h3>No questions available.</h3>
+            <p>Please check the backend connection.</p>
+          </div>
+        )}
+
+        {result && (
+          <div className="result-card">
+            <h2>Assessment Complete 🎉</h2>
+
+            <div className="result-score">
+              {result.score}%
+            </div>
+
+            <p>
+              You answered{" "}
+              <strong>{result.correct}</strong> out of{" "}
+              <strong>{result.total}</strong> questions correctly.
+            </p>
+
+            <button
+              className="primary-button"
+              onClick={() =>
+                setActivePage("Dashboard")
+              }
+            >
+              Back to Dashboard
+            </button>
+          </div>
+        )}
+      </section>
+    );
+  }
+
+  // =========================
+  // AI MENTOR PAGE
+  // =========================
+
+  function renderMentor() {
+    return (
+      <section className="mentor-page">
+        <div className="mentor-card">
+          <div className="mentor-icon">
+            🤖
+          </div>
+
+          <h2>AI Mentor</h2>
+
+          <p className="mentor-description">
+            Ask questions about DSA, DBMS, OS, CN, OOP,
+            Aptitude, or placements.
+          </p>
+
+          <div className="mentor-chat">
+            <div className="mentor-message">
+              <strong>AI Mentor</strong>
+
+              <p>
+                Hi! I'm your placement mentor.
+                What would you like to learn today?
+              </p>
+            </div>
+
+            {mentorAnswer && (
+              <div className="mentor-answer">
+                <strong>🤖 Mentor Response</strong>
+
+                <p>{mentorAnswer}</p>
+              </div>
+            )}
+
+            {mentorLoading && (
+              <div className="mentor-loading">
+                Thinking...
+              </div>
+            )}
+          </div>
+
+          <div className="mentor-input-container">
+            <input
+              type="text"
+              placeholder="Ask your placement question..."
+              value={mentorQuestion}
+              onChange={(event) =>
+                setMentorQuestion(event.target.value)
+              }
+              onKeyDown={handleMentorKeyDown}
+            />
+
+            <button
+              className="mentor-send-button"
+              onClick={askMentor}
+              disabled={mentorLoading}
+            >
+              {mentorLoading ? "..." : "Send"}
+            </button>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  function renderStudyPlan() {
+    return (
+      <section className="study-plan-page">
+        <h2>Your Personalized Study Plan 📚</h2>
+
+        <p>
+          Focus more on your weaker subjects and maintain
+          your strong areas.
+        </p>
+
+        <div className="study-grid">
+          <div className="study-card high">
+            <span>🔴 High Priority</span>
+
+            <h2>Computer Networks</h2>
+
+            <p>Current Score: 38%</p>
+
+            <strong>Study 2 hours/day</strong>
+
+            <ul>
+              <li>OSI Model</li>
+              <li>TCP/IP</li>
+              <li>Routing</li>
+              <li>Network Security</li>
+            </ul>
+          </div>
+
+          <div className="study-card high">
+            <span>🔴 High Priority</span>
+
+            <h2>Operating Systems</h2>
+
+            <p>Current Score: 43%</p>
+
+            <strong>Study 2 hours/day</strong>
+
+            <ul>
+              <li>Processes & Threads</li>
+              <li>CPU Scheduling</li>
+              <li>Deadlocks</li>
+              <li>Memory Management</li>
+            </ul>
+          </div>
+
+          <div className="study-card medium">
+            <span>🟡 Medium Priority</span>
+
+            <h2>DSA</h2>
+
+            <p>Current Score: 72%</p>
+
+            <strong>Study 1.5 hours/day</strong>
+
+            <ul>
+              <li>Arrays</li>
+              <li>Strings</li>
+              <li>Binary Search</li>
+              <li>Linked Lists</li>
+            </ul>
+          </div>
+
+          <div className="study-card maintain">
+            <span>🟢 Maintain</span>
+
+            <h2>DBMS</h2>
+
+            <p>Current Score: 85%</p>
+
+            <strong>Study 30 minutes/day</strong>
+
+            <ul>
+              <li>SQL</li>
+              <li>Joins</li>
+              <li>Normalization</li>
+              <li>Transactions</li>
+            </ul>
+          </div>
         </div>
 
-      </div>
+        <div className="today-plan">
+          <h2>Today's Plan 🎯</h2>
 
+          <div>
+            <strong>1. Computer Networks</strong>
+            <p>Study OSI Model — 45 minutes</p>
+          </div>
 
-      {/* FILTERS */}
+          <div>
+            <strong>2. Operating Systems</strong>
+            <p>Practice CPU Scheduling — 45 minutes</p>
+          </div>
 
-      <div className="filters">
+          <div>
+            <strong>3. DSA</strong>
+            <p>Solve 3 Binary Search problems — 60 minutes</p>
+          </div>
 
-        <input
-          className="search-input"
-          type="text"
-          placeholder="🔍 Search questions..."
-          value={search}
-          onChange={(event) =>
-            setSearch(
-              event.target.value
-            )
-          }
-        />
+          <div>
+            <strong>4. DBMS</strong>
+            <p>Practice SQL — 30 minutes</p>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
-        <select
-          className="select-input"
-          value={category}
-          onChange={(event) =>
-            setCategory(
-              event.target.value
-            )
-          }
-        >
-          {categories.map((item) => (
-            <option
-              key={item}
-              value={item}
-            >
-              {item}
-            </option>
-          ))}
-        </select>
+  function renderOtherPage() {
+    return (
+      <section className="coming-soon">
+        <h2>{activePage}</h2>
 
+        <p>This module will be built next.</p>
+      </section>
+    );
+  }
 
-        <select
-          className="select-input"
-          value={difficulty}
-          onChange={(event) =>
-            setDifficulty(
-              event.target.value
-            )
-          }
-        >
-          <option value="All">
-            All Difficulties
-          </option>
-
-          <option value="Easy">
-            Easy
-          </option>
-
-          <option value="Medium">
-            Medium
-          </option>
-
-          <option value="Hard">
-            Hard
-          </option>
-        </select>
-
+  return (
+    <div className="app">
+      <aside className="sidebar">
+        <h2>AI Mentor</h2>
 
         <button
-          onClick={showRandomQuestion}
+          className={
+            activePage === "Dashboard"
+              ? "active"
+              : ""
+          }
+          onClick={() =>
+            setActivePage("Dashboard")
+          }
         >
-          🎲 Random Question
+          🏠 Dashboard
         </button>
 
-        <button onClick={startQuiz}>
-          🎯 Start Quiz
+        <button
+          className={
+            activePage === "Assessment"
+              ? "active"
+              : ""
+          }
+          onClick={() =>
+            setActivePage("Assessment")
+          }
+        >
+          📝 Assessment
         </button>
 
-      </div>
+        <button
+          className={
+            activePage === "Study Plan"
+              ? "active"
+              : ""
+          }
+          onClick={() =>
+            setActivePage("Study Plan")
+          }
+        >
+          📚 Study Plan
+        </button>
 
+        <button
+          className={
+            activePage === "AI Mentor"
+              ? "active"
+              : ""
+          }
+          onClick={() =>
+            setActivePage("AI Mentor")
+          }
+        >
+          🤖 AI Mentor
+        </button>
 
-      {/* QUESTIONS */}
+        <button
+          className={
+            activePage === "Resume"
+              ? "active"
+              : ""
+          }
+          onClick={() =>
+            setActivePage("Resume")
+          }
+        >
+          📄 Resume Analysis
+        </button>
 
-      <h2>
-        Interview Questions (
-        {filteredQuestions.length}
-        )
-      </h2>
+        <button
+          className={
+            activePage === "Interview"
+              ? "active"
+              : ""
+          }
+          onClick={() =>
+            setActivePage("Interview")
+          }
+        >
+          🎯 Interview Prep
+        </button>
+      </aside>
 
+      <main className="main">
+        <header>
+          <div>
+            <h1>{activePage}</h1>
 
-      {loading && (
-        <p>
-          Loading questions...
-        </p>
-      )}
+            <p>
+              Personalized placement preparation platform
+            </p>
+          </div>
 
+          <div className="profile">
+            <div className="avatar">G</div>
 
-      {!loading &&
-        filteredQuestions.map(
-          (item) => (
+            <span>Student</span>
+          </div>
+        </header>
 
-            <div
-              className="question-card"
-              id={`question-${item.id}`}
-              key={item.id}
-            >
+        {activePage === "Dashboard" &&
+          renderDashboard()}
 
-              <h3>
-                {item.id}.{" "}
-                {item.question}
-              </h3>
+        {activePage === "Assessment" &&
+          renderAssessment()}
 
-              <p className="question-info">
+        {activePage === "AI Mentor" &&
+          renderMentor()}
 
-                <strong>
-                  {item.category}
-                </strong>
+        {activePage === "Study Plan" &&
+          renderStudyPlan()}
 
-                {" | "}
-
-                {item.difficulty}
-
-              </p>
-
-
-              <div className="question-actions">
-
-                <button
-                  onClick={() =>
-                    setSelectedQuestion(
-                      selectedQuestion ===
-                        item.id
-                        ? null
-                        : item.id
-                    )
-                  }
-                >
-                  {selectedQuestion ===
-                  item.id
-                    ? "Hide Answer"
-                    : "Show Answer"}
-                </button>
-
-
-                <button
-                  className={
-                    completedQuestions.includes(
-                      item.id
-                    )
-                      ? "completed"
-                      : ""
-                  }
-                  onClick={() =>
-                    toggleCompleted(
-                      item.id
-                    )
-                  }
-                >
-                  {completedQuestions.includes(
-                    item.id
-                  )
-                    ? "✓ Completed"
-                    : "Mark as Completed"}
-                </button>
-
-              </div>
-
-
-              {selectedQuestion ===
-                item.id && (
-
-                <div className="question-answer">
-
-                  <strong>
-                    Answer:
-                  </strong>
-
-                  <p>
-                    {item.answer}
-                  </p>
-
-                </div>
-
-              )}
-
-            </div>
-          )
-        )}
-
-
-      {!loading &&
-        filteredQuestions.length === 0 && (
-          <p>
-            No questions found.
-          </p>
-        )}
-
+        {activePage !== "Dashboard" &&
+          activePage !== "Assessment" &&
+          activePage !== "AI Mentor" &&
+          activePage !== "Study Plan" &&
+          renderOtherPage()}
+      </main>
     </div>
   );
 }
