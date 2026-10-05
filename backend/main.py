@@ -1,14 +1,44 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from questions import questions
+from google import genai
+from google.genai import types
+from dotenv import load_dotenv
+import os
+
+
+# =========================================================
+# LOAD ENVIRONMENT VARIABLES
+# =========================================================
+
+load_dotenv()
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+client = None
+
+if GEMINI_API_KEY:
+    client = genai.Client(
+        api_key=GEMINI_API_KEY
+    )
+
+
+# =========================================================
+# FASTAPI APP
+# =========================================================
 
 app = FastAPI(
     title="AI Placement Mentor API",
     description="Backend API for AI Placement Mentor",
-    version="1.0"
+    version="2.0"
 )
 
+
+# =========================================================
 # CORS
+# =========================================================
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -21,26 +51,42 @@ app.add_middleware(
 )
 
 
-# ---------------- HOME ----------------
+# =========================================================
+# REQUEST MODEL
+# =========================================================
+
+class MentorRequest(BaseModel):
+    question: str
+
+
+# =========================================================
+# HOME
+# =========================================================
 
 @app.get("/")
 def home():
     return {
-        "message": "AI Placement Mentor Backend is Running"
+        "message": "AI Placement Mentor Backend is Running",
+        "genai_enabled": client is not None
     }
 
 
-# ---------------- GET QUESTIONS ----------------
+# =========================================================
+# GET QUESTIONS
+# =========================================================
 
 @app.get("/questions")
 def get_questions():
+
     return {
         "questions": questions,
         "total": len(questions)
     }
 
 
-# ---------------- FIND RECOMMENDED QUESTIONS ----------------
+# =========================================================
+# FIND RECOMMENDED QUESTIONS
+# =========================================================
 
 def get_recommended_questions(keyword):
 
@@ -64,6 +110,7 @@ def get_recommended_questions(keyword):
             keyword in category
             or keyword in question_text
         ):
+
             recommended.append({
                 "id": item.get("id"),
                 "question": item.get("question"),
@@ -71,225 +118,231 @@ def get_recommended_questions(keyword):
                 "difficulty": item.get("difficulty")
             })
 
-        # Return maximum 5 recommendations
+        # Maximum 5 recommendations
         if len(recommended) == 5:
             break
 
     return recommended
 
 
-# ---------------- AI MENTOR ----------------
+# =========================================================
+# REAL GENAI AI MENTOR
+# =========================================================
 
-@app.get("/mentor")
-def mentor(question: str):
+@app.post("/mentor")
+def mentor(request: MentorRequest):
 
-    user_question = question.lower()
+    user_question = request.question.strip()
 
-    topic = None
-    answer = ""
+    # -----------------------------------------------------
+    # Empty question
+    # -----------------------------------------------------
+
+    if not user_question:
+
+        return {
+            "answer": "Please enter a question.",
+            "recommended_questions": []
+        }
 
 
-    # -------- REACT --------
+    # -----------------------------------------------------
+    # Check Gemini API configuration
+    # -----------------------------------------------------
 
-    if "react" in user_question:
+    if client is None:
 
-        topic = "react"
+        return {
+            "answer": (
+                "Gemini API is not configured. "
+                "Please add GEMINI_API_KEY to your environment variables."
+            ),
+            "recommended_questions": []
+        }
 
-        answer = """
-For React interview preparation, focus on:
 
-1. Components and JSX
-2. Props and State
-3. useState
-4. useEffect
-5. Hooks
-6. Virtual DOM
-7. Controlled Components
-8. Context API
-9. API calls
-10. Project architecture
+    # -----------------------------------------------------
+    # SYSTEM INSTRUCTION
+    # -----------------------------------------------------
 
-For interviews, explain where you used React concepts in your AI Placement Mentor project.
+    system_instruction = """
+You are AI Placement Mentor.
+
+You are an intelligent technical interview
+and placement preparation assistant.
+
+Your purpose is to help students prepare for:
+
+- DSA
+- Python
+- Java
+- JavaScript
+- React
+- FastAPI
+- REST APIs
+- SQL
+- DBMS
+- Operating Systems
+- Computer Networks
+- OOP
+- Generative AI
+- LLMs
+- Prompt Engineering
+- RAG
+- Embeddings
+- Vector Databases
+- LangChain
+- AI Agents
+- Backend Development
+- System Design
+- Software Engineering Interviews
+
+IMPORTANT RULES:
+
+1. Explain concepts clearly.
+
+2. Assume the student can be a beginner.
+
+3. Use simple examples.
+
+4. Give code examples when useful.
+
+5. Explain code step-by-step.
+
+6. For interview questions, provide an
+   interview-ready explanation.
+
+7. If the student asks a coding question,
+   explain the approach before the code.
+
+8. Keep answers practical and placement-focused.
+
+9. Do not invent details about the student's
+   project that were not provided.
+
+10. If the student asks about Generative AI,
+    explain both the concept and practical
+    implementation where appropriate.
+
+11. When explaining RAG, discuss:
+    documents, chunking, embeddings,
+    vector search, retrieval, context,
+    and generation.
+
+12. When explaining LLM applications,
+    distinguish between:
+    traditional rule-based logic and
+    actual generative AI.
 """
 
 
-    # -------- DSA --------
+    # -----------------------------------------------------
+    # USER PROMPT
+    # -----------------------------------------------------
 
-    elif (
-        "dsa" in user_question
-        or "data structure" in user_question
-        or "algorithm" in user_question
-    ):
+    prompt = f"""
+The student asked:
 
-        topic = "dsa"
+{user_question}
 
-        answer = """
-For DSA preparation, focus on problem-solving patterns.
+Answer as an AI Placement Mentor.
 
-Important topics:
+Give a useful, technically accurate,
+beginner-friendly answer.
 
-1. Arrays
-2. Strings
-3. Linked Lists
-4. Stack
-5. Queue
-6. Recursion
-7. Binary Search
-8. Trees
-9. Graphs
-10. Dynamic Programming
+If this is an interview question,
+also provide a short interview-ready answer.
 
-In interviews, first explain the brute-force approach and then optimize it.
+If code is required, provide a small
+working example and explain it.
 """
 
 
-    # -------- SQL --------
+    # -----------------------------------------------------
+    # CALL GEMINI
+    # -----------------------------------------------------
 
-    elif "sql" in user_question:
+    try:
 
-        topic = "sql"
-
-        answer = """
-For SQL interviews, focus on:
-
-1. SELECT and WHERE
-2. GROUP BY
-3. HAVING
-4. JOINS
-5. Subqueries
-6. Aggregate Functions
-7. Window Functions
-8. Keys
-9. Normalization
-10. Indexes
-
-Practice writing queries independently.
-"""
-
-
-    # -------- JAVA --------
-
-    elif "java" in user_question:
-
-        topic = "java"
-
-        answer = """
-For Java interviews, focus on:
-
-1. OOP principles
-2. Classes and Objects
-3. Inheritance
-4. Polymorphism
-5. Abstraction
-6. Encapsulation
-7. Exception Handling
-8. Collections Framework
-9. Multithreading
-10. JVM, JRE and JDK
-
-Prepare practical examples for every important concept.
-"""
-
-
-    # -------- DBMS --------
-
-    elif "dbms" in user_question:
-
-        topic = "dbms"
-
-        answer = """
-For DBMS interviews, focus on:
-
-1. DBMS vs RDBMS
-2. Primary and Foreign Keys
-3. Normalization
-4. ACID Properties
-5. Transactions
-6. Indexing
-7. Joins
-8. ER Diagrams
-9. Concurrency Control
-10. SQL Queries
-"""
-
-
-    # -------- OPERATING SYSTEMS --------
-
-    elif (
-        "operating system" in user_question
-        or "os" in user_question
-    ):
-
-        topic = "operating systems"
-
-        answer = """
-For Operating Systems interviews, focus on:
-
-1. Process
-2. Thread
-3. Process Scheduling
-4. Context Switching
-5. Deadlock
-6. Paging
-7. Segmentation
-8. Virtual Memory
-9. Synchronization
-10. CPU Scheduling Algorithms
-"""
-
-
-    # -------- INTERVIEW / PLACEMENT --------
-
-    elif (
-        "interview" in user_question
-        or "placement" in user_question
-    ):
-
-        answer = """
-For placement preparation, focus on four major areas:
-
-1. DSA
-2. Core CS subjects
-3. Projects
-4. HR questions
-
-For your projects, always be prepared to explain:
-
-• Why you built it
-• Technologies used
-• Architecture
-• API communication
-• Challenges
-• Your contribution
-"""
-
-
-    # -------- DEFAULT --------
-
-    else:
-
-        answer = """
-As your AI Placement Mentor, I recommend:
-
-1. Understand the concept.
-2. Learn why it is used.
-3. Practice with examples.
-4. Connect it to your project.
-5. Practice explaining it in interview language.
-
-Ask me about DSA, Java, React, SQL, DBMS,
-Operating Systems, OOP, projects, or placements.
-"""
-
-
-    # Get questions related to topic
-    recommended_questions = []
-
-    if topic:
-        recommended_questions = (
-            get_recommended_questions(topic)
+        response = client.models.generate_content(
+            model="gemini-3.8-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                temperature=0.4,
+                max_output_tokens=1000
+            )
         )
 
+        answer = response.text
+
+        if not answer:
+
+            answer = (
+                "The AI model did not return a response. "
+                "Please try again."
+            )
+
+
+    except Exception as error:
+
+        print("Gemini API Error:", error)
+
+        return {
+            "answer": (
+                "I could not generate an AI response right now. "
+                "Please check the Gemini API configuration "
+                "and try again."
+            ),
+            "recommended_questions": []
+        }
+
+
+    # =====================================================
+    # FIND RELATED QUESTIONS
+    # =====================================================
+
+    recommended_questions = []
+
+    question_lower = user_question.lower()
+
+    topic_keywords = [
+        ("dsa", "dsa"),
+        ("data structure", "dsa"),
+        ("algorithm", "dsa"),
+        ("sql", "sql"),
+        ("java", "java"),
+        ("react", "react"),
+        ("dbms", "dbms"),
+        ("operating system", "operating systems"),
+        (" os ", "operating systems"),
+        ("network", "cn"),
+        ("computer network", "cn"),
+        ("cn", "cn"),
+        ("oop", "oop"),
+        ("python", "python"),
+        ("fastapi", "fastapi"),
+        ("rag", "rag"),
+        ("ai", "ai"),
+        ("llm", "ai")
+    ]
+
+
+    for keyword, topic in topic_keywords:
+
+        if keyword in f" {question_lower} ":
+
+            recommended_questions = (
+                get_recommended_questions(topic)
+            )
+
+            if recommended_questions:
+                break
+
+
+    # =====================================================
+    # RETURN RESPONSE
+    # =====================================================
 
     return {
         "answer": answer.strip(),
